@@ -164,7 +164,7 @@ impl Channel {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChannelId {
     User(Uuid),
     Group(GroupIdentifierBytes),

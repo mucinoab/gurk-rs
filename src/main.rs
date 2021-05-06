@@ -3,6 +3,7 @@
 mod app;
 mod config;
 mod signal;
+mod store;
 mod ui;
 mod util;
 
