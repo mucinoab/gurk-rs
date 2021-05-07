@@ -6,13 +6,32 @@ use uuid::Uuid;
 use std::convert::TryInto;
 use std::path::Path;
 
+pub trait Store {
+    type ChannelIter: Iterator<Item = (ChannelId, Channel)>;
+    type MessageIter: Iterator<Item = Message>;
+    type NameIter: Iterator<Item = (Uuid, String)>;
+
+    // read
+    fn channels(&self) -> Self::ChannelIter;
+    fn channel_messages(&self, channel: ChannelId) -> Self::MessageIter;
+    fn names(&self) -> Self::NameIter;
+    fn input(&self) -> sled::Result<String>;
+
+    // write
+    fn push_channel(&self, channel: &Channel) -> sled::Result<()>;
+    fn push_message(&self, channel_id: ChannelId, message: &Message) -> sled::Result<()>;
+    fn push_name(&self, id: Uuid, name: &str) -> sled::Result<()>;
+    fn set_input(&self, input: &str) -> sled::Result<()>;
+}
+
 const CHANNELS_TREE: &str = "gurk-channels";
 const MESSAGES_TREE: &str = "gurk-messages";
 const NAMES_TREE: &str = "gurk-names";
 const INPUT_TREE: &str = "gurk-input";
 const INPUT_KEY: &str = "input";
 
-pub struct Store {
+#[derive(Clone)]
+pub struct SledStore {
     db: sled::Db,
     channels: sled::Tree,
     messages: sled::Tree,
@@ -20,7 +39,8 @@ pub struct Store {
     input: sled::Tree,
 }
 
-impl Store {
+impl SledStore {
+    #[allow(dead_code)]
     pub fn open(path: impl AsRef<Path>) -> sled::Result<Self> {
         let db = sled::open(path)?;
         let channels = db.open_tree(CHANNELS_TREE)?;
@@ -35,33 +55,62 @@ impl Store {
             input,
         })
     }
+}
 
-    pub fn channels(&self) -> impl Iterator<Item = Channel> + '_ {
-        self.channels.iter().filter_map(move |res| {
-            let (_k, v) = res.ok()?;
-            let mut channel: Channel = serde_json::from_slice(&v).ok()?;
-            channel.messages =
-                StatefulList::with_items(self.channel_messages(channel.id).collect());
-            Some(channel)
+impl Iterator for SledNameIter {
+    type Item = (Uuid, String);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.find_map(|res| {
+            let (k, v) = res.ok()?;
+            let k = k.as_ref().try_into().ok()?;
+            let id = Uuid::from_bytes(k);
+            let name = std::str::from_utf8(&v).ok()?.to_string();
+            Some((id, name))
         })
     }
+}
 
-    pub fn channel_messages(&self, channel_id: ChannelId) -> impl Iterator<Item = Message> {
+impl Store for SledStore {
+    type ChannelIter = SledChannelIter;
+    type MessageIter = SledMessageIter;
+    type NameIter = SledNameIter;
+
+    fn channels(&self) -> Self::ChannelIter {
+        SledChannelIter {
+            store: self.clone(),
+            iter: self.channels.iter(),
+        }
+    }
+
+    fn channel_messages(&self, channel_id: ChannelId) -> Self::MessageIter {
         let k = channel_id.to_bytes();
-        self.messages.scan_prefix(k).filter_map(|res| {
-            let (_k, v) = res.ok()?;
-            serde_json::from_slice(&v).ok()
-        })
+        SledMessageIter {
+            iter: self.messages.scan_prefix(k),
+        }
     }
 
-    pub fn push_channel(&self, channel: &Channel) -> sled::Result<()> {
+    fn names(&self) -> Self::NameIter {
+        SledNameIter {
+            iter: self.names.iter(),
+        }
+    }
+
+    fn input(&self) -> sled::Result<String> {
+        Ok(self
+            .input
+            .get(INPUT_KEY)?
+            .map(|v| String::from_utf8_lossy(&v).to_string())
+            .unwrap_or_default())
+    }
+
+    fn push_channel(&self, channel: &Channel) -> sled::Result<()> {
         let k = channel.id.to_bytes();
         let v = serde_json::to_vec(channel).map_err(from_json_error)?;
         self.channels.insert(k, v)?;
         Ok(())
     }
 
-    pub fn push_message(&self, channel_id: ChannelId, message: &Message) -> sled::Result<()> {
+    fn push_message(&self, channel_id: ChannelId, message: &Message) -> sled::Result<()> {
         let message_id = self.db.generate_id()?;
         let k = MessageKey {
             channel_id,
@@ -73,28 +122,53 @@ impl Store {
         Ok(())
     }
 
-    pub fn names(&self) -> impl Iterator<Item = (Uuid, String)> {
-        self.names.iter().filter_map(|res| {
-            let (k, v) = res.ok()?;
-            let k = k.as_ref().try_into().ok()?;
-            let id = Uuid::from_bytes(k);
-            let name = std::str::from_utf8(&v).ok()?.to_string();
-            Some((id, name))
-        })
-    }
-
-    pub fn push_name(&self, id: Uuid, name: &str) -> sled::Result<()> {
+    fn push_name(&self, id: Uuid, name: &str) -> sled::Result<()> {
         self.names.insert(id.as_bytes(), name)?;
         Ok(())
     }
 
-    pub fn input(&self) -> sled::Result<String> {
-        Ok(self
-            .input
-            .get(INPUT_KEY)?
-            .map(|v| String::from_utf8_lossy(&v).to_string())
-            .unwrap_or_default())
+    fn set_input(&self, input: &str) -> sled::Result<()> {
+        self.input.insert(INPUT_KEY, input)?;
+        Ok(())
     }
+}
+
+pub struct SledChannelIter {
+    store: SledStore,
+    iter: sled::Iter,
+}
+
+impl Iterator for SledChannelIter {
+    type Item = (ChannelId, Channel);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (channel_id, mut channel) = self.iter.find_map(|res| {
+            let (k, v) = res.ok()?;
+            let channel_id = ChannelId::from_bytes(&k)?;
+            let channel: Channel = serde_json::from_slice(&v).ok()?;
+            Some((channel_id, channel))
+        })?;
+        channel.messages =
+            StatefulList::with_items(self.store.channel_messages(channel.id).collect());
+        Some((channel_id, channel))
+    }
+}
+
+pub struct SledMessageIter {
+    iter: sled::Iter,
+}
+
+impl Iterator for SledMessageIter {
+    type Item = Message;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.find_map(|res| {
+            let (_k, v) = res.ok()?;
+            serde_json::from_slice(&v).ok()
+        })
+    }
+}
+
+pub struct SledNameIter {
+    iter: sled::Iter,
 }
 
 impl ChannelId {
@@ -148,6 +222,7 @@ impl MessageKey {
         bytes
     }
 
+    #[cfg(test)]
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let channel_id = ChannelId::from_bytes(&bytes[..ChannelId::BYTES_LEN])?;
         let message_id = u64::from_be_bytes(bytes[ChannelId::BYTES_LEN..].try_into().ok()?);
