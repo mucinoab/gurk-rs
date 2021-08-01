@@ -16,8 +16,7 @@ use std::borrow::Cow;
 
 pub const CHANNEL_VIEW_RATIO: u32 = 4;
 
-pub fn coords_within_channels_view<B: Backend>(f: &Frame<B>, x: u16, y: u16) -> Option<(u16, u16)> {
-    let rect = f.size();
+pub fn coords_within_channels_view(rect: Rect, x: u16, y: u16) -> Option<(u16, u16)> {
     // 1 offset around the view for taking the border into account
     if 0 < x && x < rect.width / CHANNEL_VIEW_RATIO as u16 && 0 < y && y + 1 < rect.height {
         Some((x - 1, y - 1))

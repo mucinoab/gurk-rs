@@ -29,7 +29,6 @@ use std::path::Path;
 
 pub struct App {
     pub config: Config,
-    pub should_quit: bool,
     pub signal_manager: signal::Manager,
     pub data: AppData,
 }
@@ -269,7 +268,6 @@ impl App {
         Ok(Self {
             config,
             data,
-            should_quit: false,
             signal_manager,
         })
     }

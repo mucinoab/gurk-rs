@@ -2,21 +2,23 @@
 
 mod app;
 mod config;
+mod environment;
 mod signal;
+mod storage;
 mod ui;
+mod update;
 mod util;
 
 use app::{App, Event};
+use update::update;
 
 use crossterm::{
-    event::{
-        DisableMouseCapture, EnableMouseCapture, Event as CEvent, EventStream, KeyCode,
-        KeyModifiers, MouseButton, MouseEventKind,
-    },
+    event::{DisableMouseCapture, EnableMouseCapture, Event as CEvent, EventStream},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::{error, info};
+use environment::Environment;
+use log::info;
 use structopt::StructOpt;
 use tokio_stream::StreamExt;
 use tui::{backend::CrosstermBackend, Terminal};
@@ -149,9 +151,10 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
 
     terminal.clear()?;
 
-    let mut res = Ok(()); // result on quit
     let mut last_render_at = Instant::now();
     let is_render_spawned = Arc::new(AtomicBool::new(false));
+
+    let mut env = Environment::with_terminal(terminal);
 
     loop {
         // render
@@ -173,139 +176,29 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
                 });
             }
         } else {
-            terminal.draw(|f| ui::draw(f, &mut app))?;
+            env.terminal.draw(|f| ui::draw(f, &mut app))?;
             last_render_at = Instant::now();
         }
 
         match rx.recv().await {
-            Some(Event::Click(event)) => match event.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    let col = event.column;
-                    let row = event.row;
-                    if let Some(channel_idx) =
-                        ui::coords_within_channels_view(&terminal.get_frame(), col, row)
-                            .map(|(_, row)| row as usize)
-                            .filter(|&idx| idx < app.data.channels.items.len())
-                    {
-                        app.data.channels.state.select(Some(channel_idx as usize));
-                        if app.reset_unread_messages() {
-                            app.save().unwrap();
-                        }
-                    }
-                }
-                MouseEventKind::ScrollUp => {
-                    if event.column
-                        < terminal.get_frame().size().width / ui::CHANNEL_VIEW_RATIO as u16
-                    {
-                        app.select_previous_channel()
-                    } else {
-                        app.on_pgup()
-                    }
-                }
-                MouseEventKind::ScrollDown => {
-                    if event.column
-                        < terminal.get_frame().size().width / ui::CHANNEL_VIEW_RATIO as u16
-                    {
-                        app.select_next_channel()
-                    } else {
-                        app.on_pgdn()
-                    }
-                }
-                _ => {}
-            },
-            Some(Event::Input(event)) => match event.code {
-                KeyCode::Char('c') if event.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(event) => {
+                if let Some(next_app) = update(app, event, &mut env).await? {
+                    app = next_app;
+                } else {
                     break;
                 }
-                KeyCode::Left => {
-                    if event
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                    {
-                        app.move_back_word();
-                    } else {
-                        app.on_left();
-                    }
-                }
-                KeyCode::Up if event.modifiers.contains(KeyModifiers::ALT) => app.on_pgup(),
-                KeyCode::Up => app.select_previous_channel(),
-                KeyCode::Right => {
-                    if event
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                    {
-                        app.move_forward_word();
-                    } else {
-                        app.on_right();
-                    }
-                }
-                KeyCode::Down if event.modifiers.contains(KeyModifiers::ALT) => app.on_pgdn(),
-                KeyCode::Down => app.select_next_channel(),
-                KeyCode::PageUp => app.on_pgup(),
-                KeyCode::PageDown => app.on_pgdn(),
-                KeyCode::Char('f') if event.modifiers.contains(KeyModifiers::ALT) => {
-                    app.move_forward_word();
-                }
-                KeyCode::Char('b') if event.modifiers.contains(KeyModifiers::ALT) => {
-                    app.move_back_word();
-                }
-                KeyCode::Char('a') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.on_home();
-                }
-                KeyCode::Char('e') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.on_end();
-                }
-                KeyCode::Char('w') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.on_delete_word();
-                }
-                KeyCode::Char('j') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.select_next_channel();
-                }
-                KeyCode::Char('k') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.select_previous_channel();
-                }
-                KeyCode::Backspace
-                    if event
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    app.on_delete_word();
-                }
-                KeyCode::Char('k') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.on_delete_suffix();
-                }
-                code => app.on_key(code).await,
-            },
-            Some(Event::Message(content)) => {
-                if let Err(e) = app.on_message(content).await {
-                    error!("failed on incoming message: {}", e);
-                }
             }
-            Some(Event::Resize { .. }) | Some(Event::Redraw) => {
-                // will just redraw the app
-            }
-            Some(Event::Quit(e)) => {
-                if let Some(e) = e {
-                    res = Err(e);
-                };
-                break;
-            }
-            None => {
-                break;
-            }
-        }
-        if app.should_quit {
-            break;
+            None => break, // channel closed => quit
         }
     }
 
     execute!(
-        terminal.backend_mut(),
+        env.terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     )
     .unwrap();
-    terminal.show_cursor().unwrap();
+    env.terminal.show_cursor().unwrap();
 
-    res
+    Ok(())
 }
