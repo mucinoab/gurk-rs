@@ -516,5 +516,12 @@ pub mod test {
             _remove: bool,
         ) {
         }
+
+        async fn save_attachment(
+            &mut self,
+            _attachment_pointer: AttachmentPointer,
+        ) -> anyhow::Result<Attachment> {
+            bail!("mocked signal manager cannot save attachments");
+        }
     }
 }
