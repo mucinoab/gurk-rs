@@ -998,12 +998,15 @@ dependencies = [
  "gh-emoji",
  "hostname",
  "itertools 0.10.1",
+ "libsignal-protocol 0.1.0 (git+https://github.com/signalapp/libsignal-client?rev=a2bc7c0)",
+ "libsignal-service 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs?rev=8523ba2)",
+ "libsignal-service-hyper 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs?rev=8523ba2)",
  "log",
  "log-panics",
  "log4rs",
  "mime_guess",
  "notify-rust",
- "opener 0.5.0",
+ "opener",
  "phonenumber",
  "presage",
  "regex-automata",
@@ -1362,6 +1365,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsignal-protocol"
+version = "0.1.0"
+source = "git+https://github.com/signalapp/libsignal-client?rev=a2bc7c0#a2bc7c03fd6cfc0466636a6bd49a64c387a6be2e"
+dependencies = [
+ "aes",
+ "aes-gcm-siv",
+ "arrayref",
+ "async-trait",
+ "block-modes",
+ "curve25519-dalek 3.1.0",
+ "displaydoc",
+ "hex",
+ "hkdf",
+ "hmac 0.11.0",
+ "itertools 0.10.1",
+ "log",
+ "num_enum",
+ "prost 0.9.0",
+ "prost-build 0.9.0",
+ "rand 0.7.3",
+ "sha2 0.9.5",
+ "subtle 2.4.1",
+ "thiserror",
+ "uuid",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "libsignal-service"
+version = "0.1.0"
+source = "git+https://github.com/whisperfish/libsignal-service-rs?rev=8523ba2#8523ba2dec4b9bdd2c88a62a9e0b6ea24303d67d"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "async-trait",
+ "base64 0.13.0",
+ "bincode",
+ "block-modes",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "hkdf",
+ "hmac 0.11.0",
+ "http",
+ "libsignal-protocol 0.1.0 (git+https://github.com/signalapp/libsignal-client?tag=v0.11.0)",
+ "log",
+ "phonenumber",
+ "pin-project",
+ "prost 0.9.0",
+ "prost-build 0.9.0",
+ "rand 0.7.3",
+ "serde",
+ "sha2 0.9.5",
+ "thiserror",
+ "url",
+ "uuid",
+ "zkgroup",
+]
+
+[[package]]
 name = "libsignal-service"
 version = "0.1.0"
 source = "git+https://github.com/whisperfish/libsignal-service-rs#bb76ca58fbb50e5064328117cca5b8b1c72db919"
@@ -1379,7 +1443,7 @@ dependencies = [
  "hkdf",
  "hmac 0.11.0",
  "http",
- "libsignal-protocol",
+ "libsignal-protocol 0.1.0 (git+https://github.com/signalapp/libsignal-client?tag=v0.11.0)",
  "log",
  "phonenumber",
  "pin-project",
@@ -1397,6 +1461,31 @@ dependencies = [
 [[package]]
 name = "libsignal-service-hyper"
 version = "0.1.0"
+source = "git+https://github.com/whisperfish/libsignal-service-rs?rev=8523ba2#8523ba2dec4b9bdd2c88a62a9e0b6ea24303d67d"
+dependencies = [
+ "async-trait",
+ "async-tungstenite",
+ "base64 0.13.0",
+ "bytes",
+ "futures",
+ "headers",
+ "hyper",
+ "hyper-rustls",
+ "hyper-timeout",
+ "libsignal-service 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs?rev=8523ba2)",
+ "log",
+ "mpart-async",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "url",
+]
+
+[[package]]
+name = "libsignal-service-hyper"
+version = "0.1.0"
 source = "git+https://github.com/whisperfish/libsignal-service-rs#bb76ca58fbb50e5064328117cca5b8b1c72db919"
 dependencies = [
  "async-trait",
@@ -1408,7 +1497,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-timeout",
- "libsignal-service",
+ "libsignal-service 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs)",
  "log",
  "mpart-async",
  "serde",
@@ -1812,15 +1901,6 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "opener"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13117407ca9d0caf3a0e74f97b490a7e64c0ae3aa90a8b7085544d0c37b6f3ae"
-dependencies = [
- "winapi",
-]
-
-[[package]]
-name = "opener"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ea3ebcd72a54701f56345f16785a6d3ac2df7e986d273eb4395c0b01db17952"
@@ -2053,17 +2133,17 @@ checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 [[package]]
 name = "presage"
 version = "0.1.0"
-source = "git+https://github.com/whisperfish/presage.git?branch=main#4b3457fd95902950be00e2cba318af2d5425e888"
+source = "git+https://github.com/whisperfish/presage.git?rev=744e924#744e924b2732c8499647a879bd036af825fc8e0c"
 dependencies = [
  "async-trait",
  "base64 0.12.3",
  "futures",
  "hex",
  "image",
- "libsignal-service",
- "libsignal-service-hyper",
+ "libsignal-service 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs)",
+ "libsignal-service-hyper 0.1.0 (git+https://github.com/whisperfish/libsignal-service-rs)",
  "log",
- "opener 0.4.1",
+ "opener",
  "qrcode",
  "rand 0.7.3",
  "serde",

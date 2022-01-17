@@ -22,7 +22,11 @@ debug = 0
 lto = "thin"
 
 [dependencies]
-presage = { git = "https://github.com/whisperfish/presage.git", branch = "main" }
+presage = { git = "https://github.com/whisperfish/presage.git", rev = "744e924" }
+# not used directly, but specified here to pin the commits for cargo install
+libsignal-service = { git = "https://github.com/whisperfish/libsignal-service-rs", rev = "8523ba2" }
+libsignal-service-hyper = { git = "https://github.com/whisperfish/libsignal-service-rs", rev = "8523ba2" }
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal-client", rev = "a2bc7c0" }
 
 anyhow = "1.0.40"
 async-trait = "0.1.51"
