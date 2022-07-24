@@ -50,16 +50,7 @@ pub async fn ensure_linked_device(
     }
 
     // link device
-    let at_hostname = hostname::get()
-        .ok()
-        .and_then(|hostname| {
-            hostname
-                .to_string_lossy()
-                .split('.')
-                .find(|s| !s.is_empty())
-                .map(|s| format!("@{}", s))
-        })
-        .unwrap_or_default();
+    let at_hostname = "@cli";
     let device_name = format!("gurk{}", at_hostname);
     println!("Linking new device with device name: {}", device_name);
     manager
@@ -80,7 +71,7 @@ pub async fn ensure_linked_device(
     let name = profile
         .name
         .map(|name| name.given_name)
-        .unwrap_or_else(whoami::username);
+        .unwrap_or_else(|| "me mario".to_string());
 
     let config = if let Some(config) = config {
         // check that config fits the profile
@@ -91,7 +82,10 @@ pub async fn ensure_linked_device(
     } else {
         let user = config::User { name, phone_number };
         let config = config::Config::with_user(user);
-        config.save_new().context("failed to init config file")?;
+        config
+            .save_new()
+            .await
+            .context("failed to init config file")?;
         config
     };
 

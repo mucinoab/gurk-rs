@@ -1,9 +1,7 @@
 //! Draw the UI
 
-use std::fmt;
-
 use chrono::Datelike;
-use itertools::Itertools;
+use cursor::Cursor;
 use tui::backend::Backend;
 use tui::layout::{Constraint, Corner, Direction, Layout, Rect};
 use tui::style::{Color, Style};
@@ -13,12 +11,13 @@ use tui::Frame;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use uuid::Uuid;
 
-use crate::cursor::Cursor;
 use crate::data::Message;
 use crate::receipt::{Receipt, ReceiptEvent};
 use crate::shortcuts::{ShortCut, SHORTCUTS};
 use crate::util::utc_timestamp_msec_to_local;
 use crate::App;
+
+use std::fmt::Write;
 
 use super::name_resolver::NameResolver;
 use super::CHANNEL_VIEW_RATIO;
@@ -566,32 +565,24 @@ fn add_attachments(msg: &Message, out: &mut String) {
             out.push('\n');
         }
 
-        fmt::write(
-            out,
-            format_args!(
-                "{}",
-                msg.attachments
-                    .iter()
-                    .format_with("\n", |attachment, f| f(&format_args!(
-                        "<file://{}>",
-                        attachment.filename.display()
-                    )))
-            ),
-        )
-        .expect("formatting attachments failed");
+        let attachment = msg.attachments.iter().fold(String::new(), |mut acc, a| {
+            writeln!(acc, "<file://{}>", a.filename.display()).unwrap();
+            acc
+        });
+
+        write!(out, "{}", attachment).expect("formatting attachments failed");
     }
 }
 
-fn add_reactions(msg: &Message, out: &mut dyn fmt::Write) {
+fn add_reactions(msg: &Message, out: &mut String) {
     if !msg.reactions.is_empty() {
-        fmt::write(
-            out,
-            format_args!(
-                " [{}]",
-                msg.reactions.iter().map(|(_, emoji)| emoji).format("")
-            ),
-        )
-        .expect("formatting reactions failed");
+        let mut emojis = String::new();
+
+        for (_, e) in &msg.reactions {
+            emojis.push_str(e);
+        }
+
+        write!(out, " [{}]", emojis).expect("formatting reactions failed");
     }
 }
 

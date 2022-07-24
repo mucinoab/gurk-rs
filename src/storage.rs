@@ -35,6 +35,7 @@ impl Storage for JsonStorage {
 
     fn load_app_data(&self) -> anyhow::Result<AppData> {
         let mut data = self.load_app_data_impl()?;
+        data.add_rate_limit();
 
         // select the first channel if none is selected
         if data.channels.state.selected().is_none() && !data.channels.items.is_empty() {
@@ -191,6 +192,9 @@ mod tests {
                 typing: TypingSet::SingleTyping(false),
             }]),
             contacts_sync_request_at: None,
+            last_msg_at: None,
+            rate: 5,
+            allowance: 5,
         };
 
         let file = NamedTempFile::new()?;

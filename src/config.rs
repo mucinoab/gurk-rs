@@ -1,8 +1,8 @@
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 
-use std::fs;
 use std::path::{Path, PathBuf};
+use tokio::fs;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
@@ -57,14 +57,14 @@ impl Config {
     /// Saves a new config file in case it does not exist.
     ///
     /// Also makes sure that the `config.data_path` exists.
-    pub fn save_new(&self) -> anyhow::Result<()> {
+    pub async fn save_new(&self) -> anyhow::Result<()> {
         let config_dir =
             dirs::config_dir().ok_or_else(|| anyhow!("could not find default config directory"))?;
         let config_file = config_dir.join("gurk/gurk.toml");
-        self.save_new_at(config_file)
+        self.save_new_at(config_file).await
     }
 
-    fn save_new_at(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
+    async fn save_new_at(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
         // check that config won't be overridden
         if path.as_ref().exists() {
             bail!(
@@ -78,9 +78,11 @@ impl Config {
             .data_path
             .parent()
             .ok_or_else(|| anyhow!("invalid data path: no parent dir"))?;
-        fs::create_dir_all(data_path).context("could not create data dir")?;
+        fs::create_dir_all(data_path)
+            .await
+            .context("could not create data dir")?;
 
-        self.save(path)
+        self.save(path).await
     }
 
     fn load(path: impl AsRef<Path>) -> anyhow::Result<Config> {
@@ -89,14 +91,14 @@ impl Config {
         Ok(config)
     }
 
-    fn save(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
+    async fn save(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
         let path = path.as_ref();
         let content = toml::ser::to_string(self)?;
         let parent_dir = path
             .parent()
             .ok_or_else(|| anyhow!("invalid config path {}: no parent dir", path.display()))?;
-        fs::create_dir_all(parent_dir).unwrap();
-        fs::write(path, &content)?;
+        fs::create_dir_all(parent_dir).await.unwrap();
+        fs::write(path, &content).await?;
         Ok(())
     }
 }

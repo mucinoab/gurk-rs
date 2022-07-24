@@ -1,16 +1,14 @@
 use crate::config::Config;
 use crate::data::{AppData, Channel, ChannelId, Message, TypingAction, TypingSet};
-use crate::input::Input;
 use crate::receipt::{Receipt, ReceiptEvent, ReceiptHandler};
 use crate::signal::{Attachment, GroupMasterKeyBytes, ProfileKey, ResolvedGroup, SignalManager};
 use crate::storage::Storage;
-use crate::util::{self, LazyRegex, StatefulList, ATTACHMENT_REGEX, URL_REGEX};
+use crate::util::{self, LazyRegex, StatefulList, ATTACHMENT_REGEX};
 
 use anyhow::{anyhow, bail, Context as _};
 use chrono::{Duration, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use itertools::Itertools;
-use notify_rust::Notification;
+use cursor::input::Input;
 use phonenumber::Mode;
 use presage::prelude::proto::{AttachmentPointer, ReceiptMessage, TypingMessage};
 use presage::prelude::{
@@ -22,7 +20,6 @@ use presage::prelude::{
     },
     AttachmentSpec, Content, ServiceAddress,
 };
-use regex_automata::Regex;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -30,7 +27,9 @@ use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::convert::TryInto;
+use std::fmt::Write;
 use std::path::Path;
+use std::process::Command;
 
 /// Amount of time to skip contacts sync after the last sync
 const CONTACTS_SYNC_DEADLINE_SEC: i64 = 60 * 60; // 1h
@@ -42,7 +41,6 @@ pub struct App {
     pub user_id: Uuid,
     pub data: AppData,
     pub should_quit: bool,
-    url_regex: LazyRegex,
     attachment_regex: LazyRegex,
     display_help: bool,
     pub is_searching: bool,
@@ -68,7 +66,6 @@ impl App {
             user_id,
             data,
             should_quit: false,
-            url_regex: LazyRegex::new(URL_REGEX),
             attachment_regex: LazyRegex::new(ATTACHMENT_REGEX),
             display_help: false,
             is_searching: false,
@@ -90,20 +87,23 @@ impl App {
 
     pub fn writing_people(&self, channel: &Channel) -> Option<String> {
         if channel.is_writing() {
-            let uuids: Box<dyn Iterator<Item = Uuid>> = match &channel.typing {
-                TypingSet::GroupTyping(uuids) => Box::new(uuids.iter().copied()),
+            let uuids: Vec<Uuid> = match &channel.typing {
+                TypingSet::GroupTyping(uuids) => uuids.iter().copied().collect(),
                 TypingSet::SingleTyping(a) => {
-                    if *a {
-                        Box::new(std::iter::once(channel.user_id().unwrap()))
-                    } else {
-                        Box::new(std::iter::empty())
-                    }
+                    assert!(a);
+                    vec![channel.user_id().unwrap()]
                 }
             };
-            Some(format!(
-                "[{}] writing...",
-                uuids.map(|id| self.name_by_id(id)).format(", ")
-            ))
+
+            let mut people = String::new();
+
+            for id in uuids {
+                write!(&mut people, "{}, ", self.name_by_id(id)).unwrap();
+            }
+            people.pop();
+            people.pop();
+
+            Some(format!("[{}] writing...", people))
         } else {
             None
         }
@@ -201,12 +201,12 @@ impl App {
     ///
     /// Does nothing if no message is selected and no url is contained in the message.
     fn try_open_url(&mut self) -> Option<()> {
-        let channel_idx = self.data.channels.state.selected()?;
-        let channel = &self.data.channels.items[channel_idx];
-        let message = channel.selected_message()?;
-        let re = self.url_regex.compiled();
-        open_url(message, re)?;
-        self.reset_message_selection();
+        // let channel_idx = self.data.channels.state.selected()?;
+        // let channel = &self.data.channels.items[channel_idx];
+        // let message = channel.selected_message()?;
+        // let re = self.url_regex.compiled();
+        // //open_url(message, re)?;
+        // self.reset_message_selection();
         Some(())
     }
 
@@ -667,7 +667,11 @@ impl App {
         let notification = [body, attachments_text.as_deref()]
             .into_iter()
             .flatten()
-            .join(" ");
+            .fold(String::new(), |mut acc, x| {
+                write!(&mut acc, "{x} ").unwrap();
+                acc
+            });
+
         if !notification.is_empty() {
             self.notify(from, &notification);
         }
@@ -1070,9 +1074,14 @@ impl App {
         };
     }
 
-    fn notify(&self, summary: &str, text: &str) {
-        if let Err(e) = Notification::new().summary(summary).body(text).show() {
-            error!("failed to send notification: {}", e);
+    fn notify(&mut self, summary: &str, text: &str) {
+        if self.data.should_notify() {
+            let mut command = Command::new("notify-send");
+            command.arg(summary).arg(text).arg("--icon=signal-desktop");
+
+            if let Err(e) = command.status() {
+                error!("failed to send notification: {}", e);
+            }
         }
     }
 
@@ -1081,7 +1090,10 @@ impl App {
         let mut clean_input = String::new();
 
         let re = self.attachment_regex.compiled();
-        let attachments = re.find_iter(input.as_bytes()).filter_map(|(start, end)| {
+        let attachments = re.find_iter(input).filter_map(|m| {
+            //(start, end)
+            let start = m.start();
+            let end = m.end();
             let path_str = &input[start..end].strip_prefix("file://")?;
 
             let path = Path::new(path_str);
@@ -1199,15 +1211,15 @@ fn to_emoji(s: &str) -> Option<&str> {
     }
 }
 
-fn open_url(message: &Message, url_regex: &Regex) -> Option<()> {
-    let text = message.message.as_ref()?;
-    let (start, end) = url_regex.find(text.as_bytes())?;
-    let url = &text[start..end];
-    if let Err(e) = opener::open(url) {
-        error!("failed to open {}: {}", url, e);
-    }
-    Some(())
-}
+// fn open_url(message: &Message, url_regex: &Regex) -> Option<()> {
+//     let text = message.message.as_ref()?;
+//     let (start, end) = url_regex.find(text.as_bytes())?;
+//     let url = &text[start..end];
+//     if let Err(e) = opener::open(url) {
+//         error!("failed to open {}: {}", url, e);
+//     }
+//     Some(())
+// }
 
 fn notification_text_for_attachments(attachments: &[Attachment]) -> Option<String> {
     match attachments.len() {

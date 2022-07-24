@@ -2,9 +2,7 @@
 
 mod app;
 mod config;
-mod cursor;
 mod data;
-mod input;
 mod receipt;
 mod shortcuts;
 mod signal;
@@ -23,41 +21,27 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use presage::prelude::Content;
-use structopt::StructOpt;
 use tokio_stream::StreamExt;
 use tracing::{error, info, metadata::LevelFilter};
 use tui::{backend::CrosstermBackend, Terminal};
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::storage::JsonStorage;
 
 const TARGET_FPS: u64 = 144;
 const RECEIPT_TICK_PERIOD: u64 = 144;
-const FRAME_BUDGET: Duration = Duration::from_millis(1000 / TARGET_FPS);
 const RECEIPT_BUDGET: Duration = Duration::from_millis(RECEIPT_TICK_PERIOD * 1000 / TARGET_FPS);
 const MESSAGE_SCROLL_BACK: bool = false;
 
-#[derive(Debug, StructOpt)]
-struct Args {
-    /// Enables logging to `gurk.log` in the current working directory
-    #[structopt(short, long = "verbose", parse(from_occurrences))]
-    verbosity: u8,
-    /// Relinks the device (helpful when device was unlinked)
-    #[structopt(long)]
-    relink: bool,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::from_args();
+    let verbosity = std::env::args();
 
     let file_appender = tracing_appender::rolling::never("./", "gurk.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     tracing_subscriber::fmt()
-        .with_max_level(match args.verbosity {
+        .with_max_level(match verbosity.len() {
             0 => LevelFilter::OFF,
             1 => LevelFilter::INFO,
             2 => LevelFilter::DEBUG,
@@ -70,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     log_panics::init();
 
     tokio::task::LocalSet::new()
-        .run_until(run_single_threaded(args.relink))
+        .run_until(run_single_threaded(false))
         .await
 }
 
@@ -101,14 +85,12 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
     app.request_contacts_sync().await?;
 
     enable_raw_mode()?;
-    let _raw_mode_guard = scopeguard::guard((), |_| {
-        disable_raw_mode().unwrap();
-    });
 
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Event>(100);
+    // Terminal input and resizing
     tokio::spawn({
         let tx = tx.clone();
         async move {
@@ -169,8 +151,6 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
     terminal.clear()?;
 
     let mut res = Ok(()); // result on quit
-    let mut last_render_at = Instant::now();
-    let is_render_spawned = Arc::new(AtomicBool::new(false));
 
     let tick_tx = tx.clone();
     // Tick to trigger receipt sending
@@ -186,28 +166,7 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
     });
 
     loop {
-        // render
-        let left_frame_budget = FRAME_BUDGET.checked_sub(last_render_at.elapsed());
-        if let Some(budget) = left_frame_budget {
-            // skip frames that render too fast
-            if !is_render_spawned.load(Ordering::Relaxed) {
-                let tx = tx.clone();
-                let is_render_spawned = is_render_spawned.clone();
-                is_render_spawned.store(true, Ordering::Relaxed);
-                tokio::spawn(async move {
-                    // Redraw message is needed to make sure that we render the skipped frame
-                    // if it was the last frame in the rendering budget window.
-                    tokio::time::sleep(budget).await;
-                    tx.send(Event::Redraw)
-                        .await
-                        .expect("logic error: events channel closed");
-                    is_render_spawned.store(false, Ordering::Relaxed);
-                });
-            }
-        } else {
-            terminal.draw(|f| ui::draw(f, &mut app))?;
-            last_render_at = Instant::now();
-        }
+        terminal.draw(|f| ui::draw(f, &mut app))?;
 
         match rx.recv().await {
             Some(Event::Tick) => {
@@ -229,6 +188,7 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
                     }
                 }
                 MouseEventKind::ScrollUp => {
+                    terminal.clear()?;
                     if event.column
                         < terminal.get_frame().size().width / ui::CHANNEL_VIEW_RATIO as u16
                     {
@@ -238,6 +198,7 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
                     }
                 }
                 MouseEventKind::ScrollDown => {
+                    terminal.clear()?;
                     if event.column
                         < terminal.get_frame().size().width / ui::CHANNEL_VIEW_RATIO as u16
                     {
@@ -360,6 +321,7 @@ async fn run_single_threaded(relink: bool) -> anyhow::Result<()> {
     )
     .unwrap();
     terminal.show_cursor().unwrap();
+    disable_raw_mode().unwrap();
 
     res
 }

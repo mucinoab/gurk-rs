@@ -24,8 +24,44 @@ pub struct AppData {
     ///
     /// Do not use directly, use [`App::name_by_id`] instead.
     pub names: HashMap<Uuid, String>,
+
     #[serde(default)]
     pub contacts_sync_request_at: Option<DateTime<Utc>>,
+
+    #[serde(skip)]
+    last_msg_at: Option<DateTime<Utc>>,
+
+    #[serde(skip)]
+    rate: i64,
+
+    #[serde(skip)]
+    allowance: i64,
+}
+
+impl AppData {
+    pub fn should_notify(&mut self) -> bool {
+        let current = Utc::now();
+
+        if let Some(last_msg) = self.last_msg_at.replace(current) {
+            let elapsed = (last_msg - current).num_seconds().clamp(0, i64::MAX);
+
+            self.allowance += elapsed * self.rate;
+            self.allowance = self.allowance.clamp(0, self.rate);
+
+            if self.allowance < 1 {
+                false
+            } else {
+                self.allowance -= 1;
+                true
+            }
+        } else {
+            true
+        }
+    }
+
+    pub fn add_rate_limit(&mut self) {
+        self.rate = 5;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

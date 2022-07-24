@@ -10,51 +10,33 @@ license = "AGPL-3.0-only"
 categories = ["command-line-utilities"]
 resolver = "2"
 
-[workspace]
-members = ["xtask"]
-
-[profile.dev.package.miniz_oxide]
-# This speeds up `cargo xtask dist`.
-opt-level = 3
-
-[profile.release]
-debug = 0
-lto = "thin"
-
 [dependencies]
 presage = { git = "https://github.com/boxdot/presage.git", rev = "f908e8f" }
 
-anyhow = "1.0.40"
-async-trait = "0.1.51"
+anyhow = "1.0.57"
+async-trait = "0.1.56"
 chrono = { version = "0.4.19", features = ["serde"] }
-crossterm = { version = "0.19.0", features = ["event-stream"] }
-derivative = "2.2.0"
-dirs = "3.0.2"
+crossterm = { version = "0.24.0", features = ["event-stream"] }
+dirs = "4.0.0"
 emoji = "0.2.1"
-gh-emoji = "1.0.3"
-hostname = "0.3.1"
-itertools = "0.10.0"
-log-panics = "2.0.0"
-mime_guess = "2.0.3"
-notify-rust = "4.5.8"
-opener = "0.5.0"
+gh-emoji = "1.0.7"
+log-panics = "2.1.0"
+mime_guess = "2.0.4"
 phonenumber = "0.3.1"
-regex-automata = "0.1.10"
-scopeguard = "1.1.0"
-serde = { version = "1.0.125", features = ["derive"] }
-serde_json = "1.0.64"
-structopt = "0.3.21"
-textwrap = "0.14.2"
-tokio = { version = "1.5.0", default-features = false, features = ["rt-multi-thread", "macros", "net", "time"] }
-tokio-stream = "0.1.5"
-toml = "0.5.8"
-tui = {version = "0.15.0", default-features = false, features = ["crossterm"]}
-unicode-width = "0.1.8"
+serde = { version = "1.0.140", features = ["derive"] }
+serde_json = "1.0.82"
+textwrap = "0.15"
+tokio = { version = "1.20.0", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "fs"] }
+tokio-stream = "0.1.9"
+toml = "0.5.9"
+tui = {version = "0.18.0", default-features = false, features = ["crossterm"]}
+unicode-width = "0.1.9"
 uuid = "0.8.2"
-whoami = "1.1.2"
 tracing = "0.1.35"
 tracing-appender = "0.2.2"
 tracing-subscriber = "0.3.11"
+cursor = { path= "../cursor/" }
+regex = "1.6.0"
 
 [dev-dependencies]
 quickcheck = "1.0.3"
